@@ -14,7 +14,7 @@ Instalación de OpenSSl
 
 ~~~
 sudo apt update
-sudo apt install pkg-config libssl-dev
+sudo apt install build-essential pkg-config libssl-dev
 ~~~
 
 Instalación de Rust
