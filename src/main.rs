@@ -27,19 +27,27 @@ fn log_debug(mensaje: &str) {
 
 #[derive(Debug, Default)]
 pub struct App {
-    linea_nueve: String,
-    linea_siete: String,
+    url: String,
+    time: String,
     exit: bool,
 }
 
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        let mut last_update = std::time::Instant::now();
+        let update_interval = std::time::Duration::from_secs(60);
+        self.update_bus_times();
+        
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            if event::poll(std::time::Duration::from_millis(5000))? {
+            if event::poll(std::time::Duration::from_millis(100))? {
                 self.handle_events()?;
             }
-            self.update_bus_times();
+
+            if last_update.elapsed() >= update_interval {
+                self.update_bus_times();
+               last_update = std::time::Instant::now();
+            }
         }
         Ok(())
     }
@@ -64,15 +72,46 @@ impl App {
         }
     }
     fn update_bus_times(&mut self) {
-        let url = "https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=110";
-        
-        if let Ok(response) = reqwest::blocking::get(url) {
+        let url_linea_nueve = String::from("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=191");
+        let url_linea_siete = String::from("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=151");
+        let url_linea_doce = String::from("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=132");
+
+
+        self.fetch_times_from_service( App {
+            url: url_linea_nueve,
+            time: "".into(),
+            exit: false
+
+        });
+        self.fetch_times_from_service( App {
+            url: url_linea_siete,
+            time: "".into(),
+            exit: false
+
+        });
+
+        self.fetch_times_from_service( App {
+            url: url_linea_doce,
+            time: "".into(),
+            exit: false
+
+        });
+    }
+    fn fetch_times_from_service(&mut self, app: App ){
+
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .build()
+            .unwrap();
+        if let Ok(response) = client.get(&app.url).send() {
             if let Ok(html) = response.text() {
                 let doc = dom_query::Document::from(&html);
                 let texto_fila = doc.select(".arrival_times_results_row  span.right");
-                self.linea_nueve = texto_fila.text().to_string();
+                log_debug(&format!("{}", texto_fila.text().to_string()));
+                &self.time = texto_fila.text().to_string();
             }
         }
+
     }
 }
 
@@ -94,11 +133,13 @@ impl Widget for &App {
             .constraints([
                 Constraint::Length(1), 
                 Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(inner_area);
 
-        render_linea_bus("Linea 9: ", &self.linea_nueve, rows[0], buf);
-        render_linea_bus("Linea 7: ", &self.linea_siete, rows[1], buf);
+        render_linea_bus("Linea 9: ", &self.time, rows[0], buf);
+        render_linea_bus("Linea 7: ", &self.time, rows[1], buf);
+        render_linea_bus("Linea 12: ", &self.time, rows[2], buf);
     }
 }
 
@@ -114,7 +155,7 @@ fn render_linea_bus(etiqueta: &str, tiempo: &str, area: Rect, buf: &mut Buffer) 
     Paragraph::new(etiqueta).left_aligned().render(chunks[0], buf);
 
     let tiempo_texto = if tiempo.is_empty() { "0" } else { tiempo };
-    let tiempo_fmt = format!("{} min", tiempo_texto).yellow();
+    let tiempo_fmt = format!("{}", tiempo_texto).yellow();
     Paragraph::new(tiempo_fmt).right_aligned().render(chunks[1], buf);
 }
 
