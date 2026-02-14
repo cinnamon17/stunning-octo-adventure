@@ -76,19 +76,19 @@ impl App {
 
         let lineas = vec![
             ("9", "191"),
-            ("7", "151"),
+            ("7", "166"),
             ("12", "132"),
         ];
 
         for (nombre, id) in lineas {
             let url = format!("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref={}", id);
-            if let Ok(tiempo) = self.fetch_times(&url) {
+            if let Ok(tiempo) = self.fetch_times(&url, nombre) {
                 self.times.insert(nombre.to_string(), tiempo + " ");
             }
         }
     }
 
-    fn fetch_times(&self, url: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn fetch_times(&self, url: &str, numero_linea: &str) -> Result<String, Box<dyn std::error::Error>> {
         let client = reqwest::blocking::Client::builder()
             .user_agent("Mozilla/5.0...")
             .build()?;
@@ -96,16 +96,29 @@ impl App {
         let response = client.get(url).send()?.text()?;
         let doc = dom_query::Document::from(&response);
 
-        let tiempos: Vec<String> = doc.select(".arrival_times_results_row span.right")
-            .iter()
-            .map(|element| element.text().trim().to_string())
-            .filter(|t| !t.is_empty())
-            .collect();
+        let filas = doc.select(".arrival_times_results_row");
 
-        if tiempos.is_empty() {
-            Ok("Sin datos".to_string())
+        let mut tiempos_filtrados = Vec::new();
+
+        for fila in filas.iter() {
+            let texto_fila = fila.text().to_string();
+
+            if texto_fila.contains(&format!("Línea {}", numero_linea)) || texto_fila.contains(&format!("L{}", numero_linea)) {
+                // .first() devuelve una Selection, no un Option.
+                let tiempo_span = fila.select("span.right").first();
+
+                // Obtenemos el texto y comprobamos si es útil
+                let t = tiempo_span.text().trim().to_string();
+                if !t.is_empty() {
+                    tiempos_filtrados.push(t);
+                }
+            }
+        }
+
+        if tiempos_filtrados.is_empty() {
+            Ok("Sin buses".to_string())
         } else {
-            Ok(tiempos.iter().take(2).cloned().collect::<Vec<_>>().join(" | "))
+            Ok(tiempos_filtrados.iter().take(2).cloned().collect::<Vec<_>>().join(" | "))
         }
     }
 }
@@ -113,7 +126,7 @@ impl App {
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::bordered()
-            .title(Line::from(" BUSES SALAMANCA ").bold().yellow())
+            .title(Line::from(" TIEMPOS DE LLEGADA EN PARADAS CERCANAS BUSES ").bold().yellow())
             .border_set(border::THICK);
 
         let inner_area = block.inner(area);
@@ -147,7 +160,7 @@ fn render_linea_bus(etiqueta: &str, tiempo: &str, area: Rect, buf: &mut Buffer) 
         .split(area);
 
     Paragraph::new(etiqueta.bold().cyan()).render(chunks[0], buf);
-    
+
     let estilo_tiempo = if tiempo.contains("LLEGANDO") {
         Style::default().fg(ratatui::style::Color::Red).bold()
     } else {
@@ -160,47 +173,46 @@ fn render_linea_bus(etiqueta: &str, tiempo: &str, area: Rect, buf: &mut Buffer) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::style::{Style, Stylize};
     use std::collections::HashMap;
 
 #[test]
-fn test_render_bus_ui() {
-    let mut tiempos_mock = HashMap::new();
-    tiempos_mock.insert("9".to_string(), "5 min".to_string());
-    tiempos_mock.insert("7".to_string(), "12 min".to_string());
-    tiempos_mock.insert("12".to_string(), "10 min".to_string());
+    fn test_render_bus_ui() {
+        let mut tiempos_mock = HashMap::new();
+        tiempos_mock.insert("9".to_string(), "5 min".to_string());
+        tiempos_mock.insert("7".to_string(), "12 min".to_string());
+        tiempos_mock.insert("12".to_string(), "10 min".to_string());
 
-    let app = App {
-    times: tiempos_mock,
-        exit: false,
-    };
+        let app = App {
+            times: tiempos_mock,
+            exit: false,
+        };
 
-    let area = Rect::new(0, 0, 60, 10);
-    let mut buf = Buffer::empty(area);
+        let area = Rect::new(0, 0, 60, 10);
+        let mut buf = Buffer::empty(area);
 
-    Widget::render(&app, area, &mut buf);
-    let contenido = buf.content
-        .iter()
-        .map(|c| c.symbol().to_string())
-        .collect::<String>();
+        Widget::render(&app, area, &mut buf);
+        let contenido = buf.content
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect::<String>();
 
-    assert!(contenido.contains("Línea 9"), "No se encontró 'Línea 9' en el buffer");
-    assert!(contenido.contains("5 min"), "No se encontró el tiempo '5 min'");
-    assert!(contenido.contains("Línea 7"), "No se encontró 'Línea 7'");
-    assert!(contenido.contains("12 min"), "No se encontró el tiempo '12 min'");
-}
+        assert!(contenido.contains("Línea 9"), "No se encontró 'Línea 9' en el buffer");
+        assert!(contenido.contains("5 min"), "No se encontró el tiempo '5 min'");
+        assert!(contenido.contains("Línea 7"), "No se encontró 'Línea 7'");
+        assert!(contenido.contains("12 min"), "No se encontró el tiempo '12 min'");
+    }
 
     #[test]
     fn test_handle_key_event_exit() {
         let mut app = App::default();
-        
+
         let key = KeyEvent::new(
             KeyCode::Char('q'),
             event::KeyModifiers::empty(),
         );
 
         app.handle_key_event(key);
-        
+
         assert!(app.exit, "La aplicación debería marcar exit como true al pulsar 'q'");
     }
 }
