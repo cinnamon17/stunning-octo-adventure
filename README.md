@@ -32,6 +32,14 @@ cd stunning-octo-adventure
 
 ## Compilación y ejecución
 
+Debug 
+
 ~~~
 cargo run
+~~~
+
+Release
+
+~~~
+cargo build --release
 ~~~
