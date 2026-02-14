@@ -23,6 +23,13 @@ Instalación de Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ~~~
 
+Clonar repositorio
+
+~~~
+git clone https://github.com/cinnamon17/stunning-octo-adventure.git
+cd stunning-octo-adventure
+~~~
+
 ## Compilación y ejecución
 
 ~~~
