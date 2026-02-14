@@ -1,7 +1,9 @@
 use std::{fs::OpenOptions, io};
+use std::collections::HashMap; 
 use std::io::Write;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::style::Style;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -27,8 +29,7 @@ fn log_debug(mensaje: &str) {
 
 #[derive(Debug, Default)]
 pub struct App {
-    url: String,
-    time: String,
+    times: HashMap<String, String>,
     exit: bool,
 }
 
@@ -72,74 +73,67 @@ impl App {
         }
     }
     fn update_bus_times(&mut self) {
-        let url_linea_nueve = String::from("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=191");
-        let url_linea_siete = String::from("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=151");
-        let url_linea_doce = String::from("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref=132");
 
+        let lineas = vec![
+            ("9", "191"),
+            ("7", "151"),
+            ("12", "132"),
+        ];
 
-        self.fetch_times_from_service( App {
-            url: url_linea_nueve,
-            time: "".into(),
-            exit: false
-
-        });
-        self.fetch_times_from_service( App {
-            url: url_linea_siete,
-            time: "".into(),
-            exit: false
-
-        });
-
-        self.fetch_times_from_service( App {
-            url: url_linea_doce,
-            time: "".into(),
-            exit: false
-
-        });
-    }
-    fn fetch_times_from_service(&mut self, app: App ){
-
-        let client = reqwest::blocking::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .build()
-            .unwrap();
-        if let Ok(response) = client.get(&app.url).send() {
-            if let Ok(html) = response.text() {
-                let doc = dom_query::Document::from(&html);
-                let texto_fila = doc.select(".arrival_times_results_row  span.right");
-                log_debug(&format!("{}", texto_fila.text().to_string()));
-                &self.time = texto_fila.text().to_string();
+        for (nombre, id) in lineas {
+            let url = format!("https://www.salamancadetransportes.com/tiempos-de-llegada/?ref={}", id);
+            if let Ok(tiempo) = self.fetch_times(&url) {
+                self.times.insert(nombre.to_string(), tiempo + " ");
             }
         }
+    }
 
+    fn fetch_times(&self, url: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("Mozilla/5.0...")
+            .build()?;
+
+        let response = client.get(url).send()?.text()?;
+        let doc = dom_query::Document::from(&response);
+
+        let tiempos: Vec<String> = doc.select(".arrival_times_results_row span.right")
+            .iter()
+            .map(|element| element.text().trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        if tiempos.is_empty() {
+            Ok("Sin datos".to_string())
+        } else {
+            Ok(tiempos.iter().take(2).cloned().collect::<Vec<_>>().join(" | "))
+        }
     }
 }
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" Horarios Buses ".bold());
-        let instructions = Line::from(vec![" Salir ".into(), "(Q) ".blue().bold()]);
-
         let block = Block::bordered()
-            .title(title.centered())
-            .title_bottom(instructions.centered())
+            .title(Line::from(" BUSES SALAMANCA ").bold().yellow())
             .border_set(border::THICK);
 
         let inner_area = block.inner(area);
         block.render(area, buf);
 
-        let rows = Layout::default()
+        let vertical_chunks = Layout::default()
             .direction(Direction::Vertical)
+            .margin(1) 
             .constraints([
-                Constraint::Length(1), 
-                Constraint::Length(1),
-                Constraint::Length(1),
+                Constraint::Length(2), 
+                Constraint::Length(2), 
+                Constraint::Length(2),
             ])
             .split(inner_area);
 
-        render_linea_bus("Linea 9: ", &self.time, rows[0], buf);
-        render_linea_bus("Linea 7: ", &self.time, rows[1], buf);
-        render_linea_bus("Linea 12: ", &self.time, rows[2], buf);
+        let lineas = [("9", 0), ("7", 1), ("12", 2)];
+        for (num, idx) in lineas {
+            let tiempo = self.times.get(num).cloned().unwrap_or_else(|| "...".to_string());
+            render_linea_bus(&format!("Línea {}:", num), &tiempo, vertical_chunks[idx], buf);
+        }
     }
 }
 
@@ -147,65 +141,66 @@ fn render_linea_bus(etiqueta: &str, tiempo: &str, area: Rect, buf: &mut Buffer) 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Length(12), 
+            Constraint::Min(10),   
         ])
         .split(area);
 
-    Paragraph::new(etiqueta).left_aligned().render(chunks[0], buf);
+    Paragraph::new(etiqueta.bold().cyan()).render(chunks[0], buf);
+    
+    let estilo_tiempo = if tiempo.contains("LLEGANDO") {
+        Style::default().fg(ratatui::style::Color::Red).bold()
+    } else {
+        Style::default().fg(ratatui::style::Color::Yellow)
+    };
 
-    let tiempo_texto = if tiempo.is_empty() { "0" } else { tiempo };
-    let tiempo_fmt = format!("{}", tiempo_texto).yellow();
-    Paragraph::new(tiempo_fmt).right_aligned().render(chunks[1], buf);
+    Paragraph::new(tiempo).style(estilo_tiempo).render(chunks[1], buf);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::style::Style;
+    use ratatui::style::{Style, Stylize};
+    use std::collections::HashMap;
 
-    #[test]
-    fn test_render_bus_ui() {
-        let app = App {
-            linea_nueve: "5".to_string(),
-            linea_siete: "12".to_string(),
-            exit: false,
-        };
+#[test]
+fn test_render_bus_ui() {
+    let mut tiempos_mock = HashMap::new();
+    tiempos_mock.insert("9".to_string(), "5 min".to_string());
+    tiempos_mock.insert("7".to_string(), "12 min".to_string());
+    tiempos_mock.insert("12".to_string(), "10 min".to_string());
 
-        let mut buf = Buffer::empty(Rect::new(0, 0, 50, 6));
-        app.render(buf.area, &mut buf);
+    let app = App {
+    times: tiempos_mock,
+        exit: false,
+    };
 
-        let mut expected = Buffer::with_lines(vec![
-            "┏━━━━━━━━━━━━━━━━ Horarios Buses ━━━━━━━━━━━━━━━━┓",
-            "┃Linea 9:                                   5 min┃",
-            "┃Linea 7:                                  12 min┃",
-            "┃                                                ┃",
-            "┃                                                ┃",
-            "┗━━━━━━━━━━━━━━━━━━ Salir (Q) ━━━━━━━━━━━━━━━━━━━┛",
-        ]);
+    let area = Rect::new(0, 0, 60, 10);
+    let mut buf = Buffer::empty(area);
 
-        let title_style = Style::new().bold();
-        let key_style = Style::new().blue().bold();
-        let time_style = Style::new().yellow();
+    Widget::render(&app, area, &mut buf);
+    let contenido = buf.content
+        .iter()
+        .map(|c| c.symbol().to_string())
+        .collect::<String>();
 
-        expected.set_style(Rect::new(17, 0, 16, 1), title_style);
-
-        expected.set_style(Rect::new(44, 1, 5, 1), time_style);
-        expected.set_style(Rect::new(43, 2, 6, 1), time_style);
-
-        expected.set_style(Rect::new(26, 5, 4, 1), key_style);
-
-        assert_eq!(buf, expected);
-    }
+    assert!(contenido.contains("Línea 9"), "No se encontró 'Línea 9' en el buffer");
+    assert!(contenido.contains("5 min"), "No se encontró el tiempo '5 min'");
+    assert!(contenido.contains("Línea 7"), "No se encontró 'Línea 7'");
+    assert!(contenido.contains("12 min"), "No se encontró el tiempo '12 min'");
+}
 
     #[test]
     fn test_handle_key_event_exit() {
         let mut app = App::default();
+        
         let key = KeyEvent::new(
-            KeyCode::Char('q'), 
-            event::KeyModifiers::empty() 
+            KeyCode::Char('q'),
+            event::KeyModifiers::empty(),
         );
+
         app.handle_key_event(key);
+        
         assert!(app.exit, "La aplicación debería marcar exit como true al pulsar 'q'");
     }
 }

@@ -10,10 +10,20 @@ en tiempo real y muestra los resultado en la gui de la terminal
 
 ## Requerimientos
 
-- Cargo 
-- Rust
+Instalación de OpenSSl 
 
-## Instalación
+~~~
+sudo apt update
+sudo apt install pkg-config libssl-dev
+~~~
+
+Instalación de Rust
+
+~~~
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+~~~
+
+## Compilación y ejecución
 
 ~~~
 cargo run

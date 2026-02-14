@@ -8,4 +8,4 @@ color-eyre = "0.6.5"
 crossterm = "0.29.0"
 ratatui = "0.30.0"
 reqwest = { version = "0.12", features = ["blocking"] }
-dom_query = "0.2" # O la versión que prefieras
+dom_query = "0.2" 
